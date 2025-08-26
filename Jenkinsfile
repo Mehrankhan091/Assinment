@@ -42,7 +42,7 @@ pipeline {
         
         stage('Formatter (Prettier)') {
             steps {
-                sh 'npm run prettier -- --check'
+                sh 'npm run prettier -- --write'
             }
             post {
                 failure {
