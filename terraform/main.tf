@@ -42,7 +42,7 @@ locals {
 }
 
 
-resource "aws_cloudfront_origin_access_control" "example" {
+resource "aws_cloudfront_origin_access_control" "default" {
   name                              = "s3_cloudfrontOAC"
   description                       = "Assignment Policy"
   origin_access_control_origin_type = "s3"
