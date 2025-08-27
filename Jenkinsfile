@@ -4,11 +4,7 @@ pipeline {
     tools {
         nodejs "nodejs"
     }
-    
-    options {
-        skipDefaultCheckout(true)
-    }
-    
+        
     stages {
         stage('Checkout Code') {
             steps {
@@ -74,6 +70,29 @@ pipeline {
                 }
             }
         }
+
+            stage('Terraform Deploy') {
+            steps {
+                dir('terraform') {
+                    script {
+                        // Terraform Init
+                        sh 'terraform init -input=false'
+                        
+                        // Terraform Plan (for visibility)
+                        sh 'terraform plan -input=false -out=tfplan'
+                        
+                        // Terraform Apply (auto-approve for CI/CD)
+                        sh 'terraform apply -input=false -auto-approve tfplan'
+                    }
+                }
+            }
+            post {
+                failure {
+                    error('❌ Terraform deployment failed!')
+                }
+            }
+        }
+    }
     }
     
     post {
