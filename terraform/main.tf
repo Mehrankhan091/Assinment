@@ -1,12 +1,9 @@
 terraform {
 
-  backend "s3" {
-    bucket         = "your-terraform-state-bucket"
-    key            = "path/to/your/state.tfstate"
-    region         = "us-east-1"
-    encrypt        = true
-    dynamodb_table = "terraform-locks" # Optional but recommended for state locking
+    backend "local" {
+    path = "terraform.tfstate"
   }
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
