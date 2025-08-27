@@ -71,18 +71,20 @@ pipeline {
             }
         }
 
-            stage('Terraform Deploy') {
+        stage('Terraform Deploy') {
             steps {
-                dir('terraform') {
-                    script {
-                        // Terraform Init
-                        sh 'terraform init -input=false'
-                        
-                        // Terraform Plan (for visibility)
-                        sh 'terraform plan -input=false -out=tfplan'
-                        
-                        // Terraform Apply (auto-approve for CI/CD)
-                        sh 'terraform apply -input=false -auto-approve tfplan'
+                withCredentials([aws(accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: 'AWS_CRED', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+                    dir('terraform') {
+                        script {
+                            // Terraform Init
+                            sh 'terraform init -input=false'
+                            
+                            // Terraform Plan (for visibility)
+                            sh 'terraform plan -input=false -out=tfplan'
+                            
+                            // Terraform Apply (auto-approve for CI/CD)
+                            sh 'terraform apply -input=false -auto-approve tfplan'
+                        }
                     }
                 }
             }
@@ -93,7 +95,6 @@ pipeline {
             }
         }
     }
-    
     
     post {
         always {
