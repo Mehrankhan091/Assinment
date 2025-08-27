@@ -1,58 +1,89 @@
-terraform {
-
-    backend "local" {
-    path = "terraform.tfstate"
-  }
-
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 6.0"
-    }
-  }
-}
 
 # Configure the AWS Provider
 provider "aws" {
-  region = "us-east-1"
+  version = "~> 6.0"
+  region  = "us-east-1"
 }
 
-
-resource "aws_s3_bucket" "log_bucket" {
-  bucket = var.logbucket
+resource "aws_s3_bucket" "b" {
+  bucket = "web-nbasss-mybucket-sasss"
 
   tags = {
     Name = "My bucket"
   }
 }
 
+# Create logging bucket with ACL enabled
+resource "aws_s3_bucket" "logs" {
+  bucket = "mycloudfront-logs-bucket-ssas"  # Change to a unique name
+}
 
-resource "aws_s3_bucket" "web_bucket" {
-  bucket = var.bucket_name
-
-  tags = {
-    Name = "My bucket"
+# Enable ACLs on the logging bucket (required for CloudFront logging)
+resource "aws_s3_bucket_ownership_controls" "logs" {
+  bucket = aws_s3_bucket.logs.id
+  rule {
+    object_ownership = "BucketOwnerPreferred"
   }
 }
 
-
-
-locals {
-  s3_origin_id = "myS3Origin"
+resource "aws_s3_bucket_acl" "logs" {
+  depends_on = [aws_s3_bucket_ownership_controls.logs]
+  bucket     = aws_s3_bucket.logs.id
+  acl        = "private"
 }
 
+# Block public access but allow CloudFront service access
+resource "aws_s3_bucket_public_access_block" "logs" {
+  bucket = aws_s3_bucket.logs.id
 
+  block_public_acls       = false  # Changed to false to allow ACLs
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# CloudFront Origin Access Control
 resource "aws_cloudfront_origin_access_control" "default" {
-  name                              = "s3_cloudfrontOAC"
-  description                       = "Assignment Policy"
+  name                              = "s3-oac"
+  description                       = "OAC for S3 bucket"
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
   signing_protocol                  = "sigv4"
 }
 
+# S3 bucket policy for main bucket
+resource "aws_s3_bucket_policy" "bucket_policy" {
+  bucket = aws_s3_bucket.b.id
+  policy = data.aws_iam_policy_document.bucket_policy.json
+}
+
+data "aws_iam_policy_document" "bucket_policy" {
+  statement {
+    principals {
+      type        = "Service"
+      identifiers = ["cloudfront.amazonaws.com"]
+    }
+    actions = [
+      "s3:GetObject"
+    ]
+    resources = [
+      "${aws_s3_bucket.b.arn}/*"
+    ]
+    condition {
+      test     = "StringEquals"
+      variable = "AWS:SourceArn"
+      values   = [aws_cloudfront_distribution.s3_distribution.arn]
+    }
+  }
+}
+
+locals {
+  s3_origin_id = "myS3Origin"
+}
+
 resource "aws_cloudfront_distribution" "s3_distribution" {
   origin {
-    domain_name              = aws_s3_bucket.web_bucket.bucket_regional_domain_name
+    domain_name              = aws_s3_bucket.b.bucket_regional_domain_name
     origin_access_control_id = aws_cloudfront_origin_access_control.default.id
     origin_id                = local.s3_origin_id
   }
@@ -64,11 +95,11 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
 
   logging_config {
     include_cookies = false
-    bucket          = aws_s3_bucket.log_bucket.bucket
+    bucket          = aws_s3_bucket.logs.bucket_domain_name
     prefix          = "myprefix"
   }
 
-  
+ 
   default_cache_behavior {
     allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods   = ["GET", "HEAD"]
@@ -143,7 +174,7 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
   }
 
   tags = {
-    Environment = var.environment
+    Environment = "production"
   }
 
   viewer_certificate {
@@ -151,24 +182,47 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
   }
 }
 
+# Logging bucket policy to allow CloudFront to write logs - Moved after CloudFront distribution
+resource "aws_s3_bucket_policy" "logs_policy" {
+  depends_on = [aws_cloudfront_distribution.s3_distribution]
+  bucket     = aws_s3_bucket.logs.id
+  policy     = data.aws_iam_policy_document.logs_policy.json
+}
 
-resource "aws_s3_bucket_website_configuration" "example" {
-  bucket = aws_s3_bucket.web_bucket.id
-
-  index_document {
-    suffix = "index.html"
-  }
-
-  error_document {
-    key = "error.html"
-  }
-
-  routing_rule {
-    condition {
-      key_prefix_equals = "docs/"
+data "aws_iam_policy_document" "logs_policy" {
+  statement {
+    principals {
+      type        = "Service"
+      identifiers = ["cloudfront.amazonaws.com"]
     }
-    redirect {
-      replace_key_prefix_with = "documents/"
+    actions = [
+      "s3:PutObject"
+    ]
+    resources = [
+      "${aws_s3_bucket.logs.arn}/*"
+    ]
+    condition {
+      test     = "StringEquals"
+      variable = "AWS:SourceArn"
+      values   = [aws_cloudfront_distribution.s3_distribution.arn]
+    }
+  }
+
+  statement {
+    principals {
+      type        = "Service"
+      identifiers = ["cloudfront.amazonaws.com"]
+    }
+    actions = [
+      "s3:GetBucketAcl"
+    ]
+    resources = [
+      aws_s3_bucket.logs.arn
+    ]
+    condition {
+      test     = "StringEquals"
+      variable = "AWS:SourceArn"
+      values   = [aws_cloudfront_distribution.s3_distribution.arn]
     }
   }
 }
